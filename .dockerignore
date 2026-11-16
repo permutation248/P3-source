@@ -1,0 +1,10 @@
+# Exclude heavy / unnecessary dirs from Docker build context.
+# .lake is INCLUDED — it contains pre-built mathlib + quickcheck oleans.
+.git
+.venv
+results
+workspaces/active
+__pycache__
+*.pyc
+docs
+config
