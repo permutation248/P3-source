@@ -1,0 +1,2 @@
+# 仅用于 scripts/upload_skill_api.py
+requests>=2.28.0

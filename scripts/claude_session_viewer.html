@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code Session Viewer</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #bc8cff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --cyan: #39d353;
+    --thinking-bg: #1a1525;
+    --thinking-border: #6e40c9;
+    --tool-bg: #0d1f2d;
+    --tool-border: #1f6feb;
+    --result-bg: #0d2818;
+    --result-border: #238636;
+    --error-bg: #2d0d0d;
+    --error-border: #da3633;
+    --user-bg: #1c1d1f;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* Layout */
+  .app {
+    display: flex;
+    height: 100vh;
+  }
+
+  .sidebar {
+    width: 320px;
+    min-width: 320px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .sidebar-header h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .session-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .session-meta .label {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .session-meta .value {
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+  }
+
+  .stats-bar {
+    display: flex;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .stat-value {
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--accent);
+  }
+
+  .stat-label {
+    color: var(--text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .sidebar-filter {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-filter input {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+  }
+
+  .sidebar-filter input:focus {
+    border-color: var(--accent);
+  }
+
+  .filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .chip {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    transition: all 0.15s;
+    user-select: none;
+  }
+
+  .chip.active {
+    border-color: var(--accent);
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--accent);
+  }
+
+  .chip:hover { border-color: var(--accent); }
+
+  .step-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .step-item {
+    padding: 8px 20px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.1s;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .step-item:hover {
+    background: var(--surface2);
+  }
+
+  .step-item.active {
+    background: var(--surface2);
+    border-left-color: var(--accent);
+  }
+
+  .step-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .step-icon.thinking { background: rgba(110, 64, 201, 0.3); color: var(--accent2); }
+  .step-icon.text { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
+  .step-icon.tool { background: rgba(31, 111, 235, 0.3); color: #79c0ff; }
+  .step-icon.result { background: rgba(35, 134, 54, 0.3); color: var(--green); }
+  .step-icon.error { background: rgba(218, 54, 51, 0.3); color: var(--red); }
+  .step-icon.system { background: rgba(210, 153, 34, 0.3); color: var(--orange); }
+
+  .step-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .step-label {
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .step-preview {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+  }
+
+  .step-number {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: monospace;
+    flex-shrink: 0;
+  }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .toolbar {
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .toolbar button {
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+
+  .toolbar button:hover {
+    border-color: var(--accent);
+    background: rgba(88, 166, 255, 0.1);
+  }
+
+  .toolbar button.active {
+    border-color: var(--accent);
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--accent);
+  }
+
+  .toolbar .spacer { flex: 1; }
+
+  .conversation {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    scroll-behavior: smooth;
+  }
+
+  /* Message blocks */
+  .msg-block {
+    margin-bottom: 16px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .msg-block.thinking {
+    border-color: var(--thinking-border);
+    background: var(--thinking-bg);
+  }
+
+  .msg-block.text-msg {
+    border-color: var(--border);
+    background: var(--surface);
+  }
+
+  .msg-block.tool-call {
+    border-color: var(--tool-border);
+    background: var(--tool-bg);
+  }
+
+  .msg-block.tool-result {
+    border-color: var(--result-border);
+    background: var(--result-bg);
+  }
+
+  .msg-block.tool-result.error-result {
+    border-color: var(--error-border);
+    background: var(--error-bg);
+  }
+
+  .msg-block.system-msg {
+    border-color: var(--orange);
+    background: rgba(210, 153, 34, 0.08);
+  }
+
+  .msg-header {
+    padding: 8px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .msg-header .badge {
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .thinking .msg-header { color: var(--accent2); border-bottom: 1px solid rgba(110, 64, 201, 0.3); }
+  .text-msg .msg-header { color: var(--accent); border-bottom: 1px solid var(--border); }
+  .tool-call .msg-header { color: #79c0ff; border-bottom: 1px solid rgba(31, 111, 235, 0.3); }
+  .tool-result .msg-header { color: var(--green); border-bottom: 1px solid rgba(35, 134, 54, 0.3); }
+  .tool-result.error-result .msg-header { color: var(--red); border-bottom: 1px solid rgba(218, 54, 51, 0.3); }
+  .system-msg .msg-header { color: var(--orange); border-bottom: 1px solid rgba(210, 153, 34, 0.3); }
+
+  .msg-body {
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+
+  .msg-body.collapsed {
+    display: none;
+  }
+
+  .msg-body pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .msg-body .tool-name {
+    color: #79c0ff;
+    font-weight: 600;
+  }
+
+  .msg-body .tool-params {
+    color: var(--text-muted);
+    font-family: 'SF Mono', monospace;
+    font-size: 12px;
+  }
+
+  .toggle-arrow {
+    transition: transform 0.2s;
+    display: inline-block;
+    font-size: 10px;
+  }
+
+  .toggle-arrow.collapsed {
+    transform: rotate(-90deg);
+  }
+
+  /* File content display */
+  .file-content {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .file-header {
+    padding: 6px 12px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .file-body {
+    padding: 8px 0;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .file-line {
+    display: flex;
+    font-family: 'SF Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .file-line:hover {
+    background: rgba(88, 166, 255, 0.05);
+  }
+
+  .line-num {
+    color: var(--text-muted);
+    text-align: right;
+    padding: 0 12px;
+    min-width: 48px;
+    user-select: none;
+    border-right: 1px solid var(--border);
+  }
+
+  .line-content {
+    padding: 0 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    flex: 1;
+  }
+
+  /* Drop zone */
+  .drop-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: var(--text-muted);
+  }
+
+  .drop-zone.dragover {
+    background: rgba(88, 166, 255, 0.05);
+  }
+
+  .drop-zone-icon {
+    font-size: 48px;
+    opacity: 0.3;
+  }
+
+  .drop-zone h2 {
+    font-size: 18px;
+    font-weight: 500;
+  }
+
+  .drop-zone p {
+    font-size: 13px;
+    max-width: 400px;
+    text-align: center;
+  }
+
+  .drop-zone label {
+    padding: 8px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+
+  .drop-zone label:hover {
+    background: rgba(88, 166, 255, 0.1);
+  }
+
+  .drop-zone input[type="file"] { display: none; }
+
+  /* Thinking content styling */
+  .thinking-text {
+    color: #d2a8ff;
+    font-style: italic;
+    white-space: pre-wrap;
+  }
+
+  /* Tool input params */
+  .param-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+  }
+
+  .param-table td {
+    padding: 4px 8px;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    vertical-align: top;
+  }
+
+  .param-table .param-key {
+    color: var(--accent);
+    font-family: monospace;
+    font-weight: 500;
+    width: 120px;
+    white-space: nowrap;
+  }
+
+  .param-table .param-val {
+    color: var(--text);
+    font-family: monospace;
+    font-size: 11px;
+    word-break: break-all;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+
+  /* Loading */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 12px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+  }
+
+  .highlight-match {
+    background: rgba(210, 153, 34, 0.4);
+    border-radius: 2px;
+  }
+
+  .token-count {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  .usage-bar {
+    display: flex;
+    gap: 16px;
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+
+  .usage-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .usage-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>Session Info</h2>
+      <div class="session-meta" id="session-meta"></div>
+    </div>
+    <div class="stats-bar" id="stats-bar"></div>
+    <div class="usage-bar" id="usage-bar"></div>
+    <div class="sidebar-filter">
+      <input type="text" id="search-input" placeholder="Search messages...">
+      <div class="filter-chips" id="filter-chips"></div>
+    </div>
+    <div class="step-list" id="step-list"></div>
+  </div>
+  <div class="main">
+    <div class="toolbar" id="toolbar">
+      <button id="btn-expand-all">Expand All</button>
+      <button id="btn-collapse-all">Collapse All</button>
+      <button id="btn-collapse-thinking" class="active">Collapse Thinking</button>
+      <button id="btn-collapse-stream">Hide Stream Events</button>
+      <div class="spacer"></div>
+      <span id="msg-counter" style="font-size:12px;color:var(--text-muted)"></span>
+    </div>
+    <div class="conversation" id="conversation">
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-icon">📄</div>
+        <h2>Claude Code Session Viewer</h2>
+        <p>Drop a Claude Code JSONL session log here, or click to browse. Visualizes thinking, tool calls, results, and conversation flow.</p>
+        <label>
+          Choose File
+          <input type="file" id="file-input" accept=".json,.jsonl">
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// State
+let sessionData = null;
+let steps = [];
+let filters = { thinking: true, text: true, tool: true, result: true, system: true };
+let collapseThinking = true;
+let searchQuery = '';
+
+// Parse JSONL
+function parseJSONL(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  return lines.map((l, i) => {
+    try { return JSON.parse(l); }
+    catch(e) { console.warn(`Line ${i} parse error`); return null; }
+  }).filter(Boolean);
+}
+
+// Extract structured steps from raw events
+function extractSteps(events) {
+  const steps = [];
+  let systemInfo = null;
+  let totalUsage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+
+  for (const evt of events) {
+    if (evt.type === 'system' && evt.subtype === 'init') {
+      systemInfo = evt;
+      steps.push({ type: 'system', data: evt });
+      continue;
+    }
+
+    if (evt.type === 'assistant') {
+      const msg = evt.message;
+      // Track usage
+      if (msg?.usage) {
+        totalUsage.input += msg.usage.input_tokens || 0;
+        totalUsage.output += msg.usage.output_tokens || 0;
+        totalUsage.cacheRead += msg.usage.cache_read_input_tokens || 0;
+        totalUsage.cacheCreate += msg.usage.cache_creation_input_tokens || 0;
+      }
+
+      for (const block of (msg?.content || [])) {
+        if (block.type === 'thinking') {
+          steps.push({ type: 'thinking', text: block.thinking, msgId: msg.id });
+        } else if (block.type === 'text' && block.text.trim()) {
+          steps.push({ type: 'text', text: block.text, msgId: msg.id });
+        } else if (block.type === 'tool_use') {
+          steps.push({
+            type: 'tool_call',
+            toolName: block.name,
+            toolId: block.id,
+            input: block.input,
+            msgId: msg.id
+          });
+        }
+      }
+      continue;
+    }
+
+    if (evt.type === 'user') {
+      const msg = evt.message;
+      for (const block of (msg?.content || [])) {
+        if (block.type === 'tool_result') {
+          let content = block.content;
+          let fileInfo = null;
+          let isError = block.is_error || false;
+
+          // Check if there's file info in the tool_use_result
+          if (evt.tool_use_result?.file) {
+            fileInfo = evt.tool_use_result.file;
+          }
+
+          // Handle array content
+          if (Array.isArray(content)) {
+            content = content.map(c => {
+              if (c.type === 'text') return c.text;
+              if (c.type === 'image') return '[Image]';
+              return JSON.stringify(c);
+            }).join('\n');
+          }
+
+          steps.push({
+            type: 'tool_result',
+            toolId: block.tool_use_id,
+            content: typeof content === 'string' ? content : JSON.stringify(content, null, 2),
+            fileInfo,
+            isError
+          });
+        } else if (block.type === 'text') {
+          steps.push({ type: 'user_text', text: block.text });
+        }
+      }
+      continue;
+    }
+
+    if (evt.type === 'rate_limit_event') {
+      steps.push({ type: 'system', data: { subtype: 'rate_limit', ...evt } });
+    }
+  }
+
+  return { steps, systemInfo, totalUsage };
+}
+
+// Pair tool calls with their results
+function pairToolCalls(steps) {
+  const toolMap = {};
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i].type === 'tool_call') {
+      toolMap[steps[i].toolId] = i;
+    }
+    if (steps[i].type === 'tool_result' && toolMap[steps[i].toolId] !== undefined) {
+      steps[toolMap[steps[i].toolId]].resultIndex = i;
+      steps[i].callIndex = toolMap[steps[i].toolId];
+    }
+  }
+  return steps;
+}
+
+// Render
+function render() {
+  renderSidebar();
+  renderConversation();
+}
+
+function renderSidebar() {
+  if (!sessionData) return;
+  const { systemInfo, totalUsage } = sessionData;
+
+  // Session meta
+  if (systemInfo) {
+    $('session-meta').innerHTML = `
+      <div><span class="label">Model:</span> <span class="value">${systemInfo.model || 'unknown'}</span></div>
+      <div><span class="label">Session:</span> <span class="value">${(systemInfo.session_id || '').slice(0, 12)}...</span></div>
+      <div><span class="label">CWD:</span> <span class="value">${systemInfo.cwd || ''}</span></div>
+      <div><span class="label">Version:</span> <span class="value">${systemInfo.claude_code_version || ''}</span></div>
+    `;
+  }
+
+  // Stats
+  const thinkCount = steps.filter(s => s.type === 'thinking').length;
+  const textCount = steps.filter(s => s.type === 'text').length;
+  const toolCount = steps.filter(s => s.type === 'tool_call').length;
+  const resultCount = steps.filter(s => s.type === 'tool_result').length;
+
+  $('stats-bar').innerHTML = `
+    <div class="stat"><span class="stat-value">${thinkCount}</span><span class="stat-label">Thinking</span></div>
+    <div class="stat"><span class="stat-value">${textCount}</span><span class="stat-label">Text</span></div>
+    <div class="stat"><span class="stat-value">${toolCount}</span><span class="stat-label">Tool Calls</span></div>
+    <div class="stat"><span class="stat-value">${resultCount}</span><span class="stat-label">Results</span></div>
+  `;
+
+  // Usage
+  $('usage-bar').innerHTML = `
+    <div class="usage-item"><span class="usage-dot" style="background:var(--accent)"></span> Input: ${formatNum(totalUsage.input)}</div>
+    <div class="usage-item"><span class="usage-dot" style="background:var(--green)"></span> Output: ${formatNum(totalUsage.output)}</div>
+    <div class="usage-item"><span class="usage-dot" style="background:var(--orange)"></span> Cache Read: ${formatNum(totalUsage.cacheRead)}</div>
+    <div class="usage-item"><span class="usage-dot" style="background:var(--accent2)"></span> Cache Create: ${formatNum(totalUsage.cacheCreate)}</div>
+  `;
+
+  // Filter chips
+  $('filter-chips').innerHTML = Object.keys(filters).map(f =>
+    `<span class="chip ${filters[f] ? 'active' : ''}" data-filter="${f}">${f}</span>`
+  ).join('');
+
+  document.querySelectorAll('.chip').forEach(chip => {
+    chip.onclick = () => {
+      const f = chip.dataset.filter;
+      filters[f] = !filters[f];
+      render();
+    };
+  });
+
+  // Step list
+  renderStepList();
+}
+
+function renderStepList() {
+  const list = $('step-list');
+  let html = '';
+  let idx = 0;
+
+  for (const step of steps) {
+    if (!shouldShow(step)) continue;
+    const { icon, iconClass, label, preview } = getStepMeta(step, idx);
+    const matchesSearch = !searchQuery || matchStep(step, searchQuery);
+    if (!matchesSearch) continue;
+
+    html += `
+      <div class="step-item" data-idx="${idx}" onclick="scrollToStep(${idx})">
+        <span class="step-number">#${idx + 1}</span>
+        <div class="step-icon ${iconClass}">${icon}</div>
+        <div class="step-info">
+          <div class="step-label">${label}</div>
+          <div class="step-preview">${escapeHtml(preview)}</div>
+        </div>
+      </div>`;
+    idx++;
+  }
+
+  list.innerHTML = html || '<div style="padding:20px;color:var(--text-muted);text-align:center">No matching steps</div>';
+}
+
+function getStepMeta(step, idx) {
+  switch (step.type) {
+    case 'thinking':
+      return { icon: '💭', iconClass: 'thinking', label: 'Thinking', preview: (step.text || '').slice(0, 60) };
+    case 'text':
+      return { icon: '💬', iconClass: 'text', label: 'Assistant', preview: (step.text || '').slice(0, 60) };
+    case 'tool_call':
+      return { icon: '🔧', iconClass: 'tool', label: step.toolName, preview: summarizeInput(step.input) };
+    case 'tool_result':
+      return {
+        icon: step.isError ? '❌' : '✅',
+        iconClass: step.isError ? 'error' : 'result',
+        label: 'Result',
+        preview: (step.content || '').slice(0, 60)
+      };
+    case 'system':
+      return { icon: '⚙️', iconClass: 'system', label: step.data.subtype || 'System', preview: '' };
+    case 'user_text':
+      return { icon: '👤', iconClass: 'text', label: 'User', preview: (step.text || '').slice(0, 60) };
+    default:
+      return { icon: '?', iconClass: '', label: step.type, preview: '' };
+  }
+}
+
+function shouldShow(step) {
+  if (step.type === 'thinking') return filters.thinking;
+  if (step.type === 'text' || step.type === 'user_text') return filters.text;
+  if (step.type === 'tool_call') return filters.tool;
+  if (step.type === 'tool_result') return filters.result;
+  if (step.type === 'system') return filters.system;
+  return true;
+}
+
+function matchStep(step, q) {
+  q = q.toLowerCase();
+  if (step.text?.toLowerCase().includes(q)) return true;
+  if (step.toolName?.toLowerCase().includes(q)) return true;
+  if (step.content?.toLowerCase().includes(q)) return true;
+  if (JSON.stringify(step.input || '').toLowerCase().includes(q)) return true;
+  return false;
+}
+
+function renderConversation() {
+  const conv = $('conversation');
+  if (!sessionData) return;
+
+  let html = '';
+  let visibleIdx = 0;
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (!shouldShow(step)) continue;
+    if (searchQuery && !matchStep(step, searchQuery)) continue;
+
+    html += renderStep(step, i, visibleIdx);
+    visibleIdx++;
+  }
+
+  conv.innerHTML = html || '<div class="loading">No steps to display</div>';
+  $('msg-counter').textContent = `${visibleIdx} steps`;
+
+  // Add toggle handlers
+  conv.querySelectorAll('.msg-header').forEach(header => {
+    header.onclick = () => {
+      const body = header.nextElementSibling;
+      const arrow = header.querySelector('.toggle-arrow');
+      body.classList.toggle('collapsed');
+      arrow?.classList.toggle('collapsed');
+    };
+  });
+}
+
+function renderStep(step, globalIdx, visibleIdx) {
+  const id = `step-${globalIdx}`;
+
+  switch (step.type) {
+    case 'system':
+      return renderSystemBlock(step, id);
+    case 'thinking':
+      return renderThinkingBlock(step, id, visibleIdx);
+    case 'text':
+      return renderTextBlock(step, id, visibleIdx);
+    case 'user_text':
+      return renderUserTextBlock(step, id, visibleIdx);
+    case 'tool_call':
+      return renderToolCallBlock(step, id, visibleIdx);
+    case 'tool_result':
+      return renderToolResultBlock(step, id, visibleIdx);
+    default:
+      return '';
+  }
+}
+
+function renderSystemBlock(step, id) {
+  const d = step.data;
+  const collapsed = true;
+  return `
+    <div class="msg-block system-msg" id="${id}">
+      <div class="msg-header">
+        <span class="toggle-arrow ${collapsed ? 'collapsed' : ''}">▼</span>
+        ⚙️ System — ${d.subtype || 'event'}
+        ${d.model ? `<span class="badge" style="background:rgba(88,166,255,0.2);color:var(--accent)">${d.model}</span>` : ''}
+        ${d.claude_code_version ? `<span class="badge" style="background:rgba(210,153,34,0.2);color:var(--orange)">v${d.claude_code_version}</span>` : ''}
+      </div>
+      <div class="msg-body ${collapsed ? 'collapsed' : ''}">
+        <pre>${escapeHtml(JSON.stringify(d, null, 2))}</pre>
+      </div>
+    </div>`;
+}
+
+function renderThinkingBlock(step, id, idx) {
+  const collapsed = collapseThinking;
+  return `
+    <div class="msg-block thinking" id="${id}">
+      <div class="msg-header">
+        <span class="toggle-arrow ${collapsed ? 'collapsed' : ''}">▼</span>
+        💭 Thinking
+        <span class="badge" style="background:rgba(110,64,201,0.2);color:var(--accent2)">${step.text.length} chars</span>
+      </div>
+      <div class="msg-body ${collapsed ? 'collapsed' : ''}">
+        <div class="thinking-text">${escapeHtml(step.text)}</div>
+      </div>
+    </div>`;
+}
+
+function renderTextBlock(step, id, idx) {
+  return `
+    <div class="msg-block text-msg" id="${id}">
+      <div class="msg-header">
+        <span class="toggle-arrow">▼</span>
+        💬 Assistant
+      </div>
+      <div class="msg-body">
+        ${renderMarkdown(step.text)}
+      </div>
+    </div>`;
+}
+
+function renderUserTextBlock(step, id, idx) {
+  return `
+    <div class="msg-block text-msg" id="${id}" style="border-color: var(--orange)">
+      <div class="msg-header" style="color: var(--orange)">
+        <span class="toggle-arrow">▼</span>
+        👤 User
+      </div>
+      <div class="msg-body">
+        ${renderMarkdown(step.text)}
+      </div>
+    </div>`;
+}
+
+function renderToolCallBlock(step, id, idx) {
+  const params = step.input || {};
+  const paramEntries = Object.entries(params);
+
+  let paramsHtml = '';
+  if (paramEntries.length > 0) {
+    paramsHtml = '<table class="param-table">';
+    for (const [k, v] of paramEntries) {
+      const val = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+      const displayVal = val.length > 2000 ? val.slice(0, 2000) + '...' : val;
+      paramsHtml += `<tr><td class="param-key">${escapeHtml(k)}</td><td class="param-val">${escapeHtml(displayVal)}</td></tr>`;
+    }
+    paramsHtml += '</table>';
+  }
+
+  return `
+    <div class="msg-block tool-call" id="${id}">
+      <div class="msg-header">
+        <span class="toggle-arrow">▼</span>
+        🔧 Tool Call — <span class="tool-name">${escapeHtml(step.toolName)}</span>
+        <span class="badge" style="background:rgba(31,111,235,0.2);color:#79c0ff">${step.toolId?.slice(-8) || ''}</span>
+      </div>
+      <div class="msg-body">
+        ${paramsHtml || '<span style="color:var(--text-muted)">No parameters</span>'}
+      </div>
+    </div>`;
+}
+
+function renderToolResultBlock(step, id, idx) {
+  const isErr = step.isError || (step.content || '').toLowerCase().includes('error');
+  const cls = isErr ? 'tool-result error-result' : 'tool-result';
+  const icon = isErr ? '❌' : '✅';
+  const collapsed = (step.content || '').length > 1000;
+
+  let bodyHtml = '';
+  if (step.fileInfo) {
+    bodyHtml = renderFileContent(step.fileInfo);
+  } else {
+    bodyHtml = `<pre>${escapeHtml(step.content || '(empty)')}</pre>`;
+  }
+
+  return `
+    <div class="msg-block ${cls}" id="${id}">
+      <div class="msg-header">
+        <span class="toggle-arrow ${collapsed ? 'collapsed' : ''}">▼</span>
+        ${icon} Result
+        ${step.fileInfo ? `<span class="badge" style="background:rgba(35,134,54,0.2);color:var(--green)">${step.fileInfo.filePath?.split('/').pop() || 'file'}</span>` : ''}
+        <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${(step.content || '').length} chars</span>
+      </div>
+      <div class="msg-body ${collapsed ? 'collapsed' : ''}">
+        ${bodyHtml}
+      </div>
+    </div>`;
+}
+
+function renderFileContent(fileInfo) {
+  const lines = (fileInfo.content || '').split('\n');
+  const startLine = fileInfo.startLine || 1;
+  let html = `<div class="file-content">
+    <div class="file-header">📄 ${escapeHtml(fileInfo.filePath || 'unknown')} (${lines.length} lines)</div>
+    <div class="file-body">`;
+
+  for (let i = 0; i < lines.length; i++) {
+    html += `<div class="file-line">
+      <span class="line-num">${startLine + i}</span>
+      <span class="line-content">${escapeHtml(lines[i])}</span>
+    </div>`;
+  }
+
+  html += '</div></div>';
+  return html;
+}
+
+function renderMarkdown(text) {
+  // Simple markdown: code blocks, bold, inline code
+  let html = escapeHtml(text);
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre>$2</pre>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code style="background:var(--bg);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+// Utilities
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatNum(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function summarizeInput(input) {
+  if (!input) return '';
+  const entries = Object.entries(input);
+  if (entries.length === 0) return '';
+  return entries.map(([k, v]) => {
+    const val = typeof v === 'string' ? v : JSON.stringify(v);
+    return `${k}=${val.slice(0, 30)}`;
+  }).join(', ').slice(0, 80);
+}
+
+function scrollToStep(idx) {
+  const el = document.getElementById(`step-${idx}`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.outline = '2px solid var(--accent)';
+    setTimeout(() => el.style.outline = '', 1500);
+  }
+}
+
+// File loading
+function loadFile(file) {
+  const conv = $('conversation');
+  conv.innerHTML = '<div class="loading"><div class="spinner"></div>Parsing session log...</div>';
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const events = parseJSONL(e.target.result);
+      const result = extractSteps(events);
+      sessionData = result;
+      steps = pairToolCalls(result.steps);
+      render();
+    } catch (err) {
+      conv.innerHTML = `<div class="loading" style="color:var(--red)">Error: ${err.message}</div>`;
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Auto-load from URL param or embedded data
+function tryAutoLoad() {
+  const params = new URLSearchParams(location.search);
+  const file = params.get('file');
+  if (file) {
+    fetch(file).then(r => r.text()).then(text => {
+      const events = parseJSONL(text);
+      const result = extractSteps(events);
+      sessionData = result;
+      steps = pairToolCalls(result.steps);
+      render();
+    });
+  }
+}
+
+// Event handlers
+$('file-input').addEventListener('change', (e) => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+const dropZone = $('conversation');
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  $('drop-zone')?.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', () => {
+  $('drop-zone')?.classList.remove('dragover');
+});
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+$('btn-expand-all').onclick = () => {
+  document.querySelectorAll('.msg-body').forEach(b => b.classList.remove('collapsed'));
+  document.querySelectorAll('.toggle-arrow').forEach(a => a.classList.remove('collapsed'));
+};
+
+$('btn-collapse-all').onclick = () => {
+  document.querySelectorAll('.msg-body').forEach(b => b.classList.add('collapsed'));
+  document.querySelectorAll('.toggle-arrow').forEach(a => a.classList.add('collapsed'));
+};
+
+$('btn-collapse-thinking').onclick = (e) => {
+  collapseThinking = !collapseThinking;
+  e.target.classList.toggle('active');
+  render();
+};
+
+$('search-input').addEventListener('input', (e) => {
+  searchQuery = e.target.value;
+  render();
+});
+
+tryAutoLoad();
+</script>
+</body>
+</html>

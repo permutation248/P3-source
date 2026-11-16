@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "anonymous-prover"
+version = "0.1.0"
+description = "AI-assisted Lean 4 code generation and verification platform"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "sqlalchemy>=2.0",
+    "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+stats = ["scipy>=1.12"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "mypy>=1.8",
+    "ruff>=0.3",
+]
+all = ["anonymous-prover[stats,dev]"]
+
+[project.scripts]
+anonymous-prover = "anonymous_prover.cli.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/anonymous_prover"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

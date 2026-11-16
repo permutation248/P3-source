@@ -1,0 +1,22 @@
+# Anonymous-Prover experiment configuration example
+name: baseline-proof
+mode: proof                    # code | proof | auto
+skills_config: none            # none | standard | extended | co_derivation | docs_only | tools_only
+tasks_dir: Benchmarks/algoveribench
+agent:
+  type: claude-code
+  model: sonnet-4-6
+  use_tap: true                  # 用 claude-tap 保存 HTTP-level traces
+  tap_output_dir: claude_traces  # traces 存放目录名
+  # backend: miromind            # 凭据来源：api | miromind | subscription
+                                  # - api          官方 Anthropic / OpenAI API key
+                                  # - miromind     MiroMind 网关 (anthropic & openai-responses)
+                                  # - subscription 服务器挂载的 OAuth 凭据（~/.claude, ~/.codex）
+                                  # 未填时走 env-var 兜底（legacy 行为）。
+lean:
+  timeout_seconds: 120
+  lake_build: true
+parallel: 4
+task_timeout_seconds: 1800
+force: false
+persist_to_db: true
